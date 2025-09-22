@@ -1,284 +1,326 @@
 #!/bin/bash
 
-# A shell script to generate Java equals(), hashCode(), getter, and setter methods based on class fields.
+# Barista ☕ - A script to generate equals(), hashCode(), getters, setters, and copy constructors for Java classes.
 
-# --- Default Configuration ---
-PRIME=31
-BOOLEAN_PREFIX="is"
+# --- Default values ---
+BOOLEAN_GETTER_PREFIX="is"
+PRIME_MULTIPLIER=31
 VAR_PREFIX=""
-FILE=""
 GENERATE_GETTERS=false
 GENERATE_SETTERS=false
+GENERATE_COPY_CONSTRUCTOR=false
+GENERATE_EQUALS_HASHCODE=false
+FILENAME=""
 
-# --- Helper Functions ---
-
-# Function to display usage information and exit.
-usage() {
-    echo "Barista: Boilerplate generator for Java classes"
-    echo "Usage: $0 -f <java_file> [-p <var_prefix>] [-b <boolean_getter_prefix>] [-m <prime_number>] [-g] [-s]"
-    echo "  -f: Path to the Java source file (required)."
-    echo "  -p: Prefix for instance variables to include (e.g., 'm_')."
-    echo "  -b: Prefix for boolean getters (default: 'is'). Can be 'get'."
-    echo "  -m: Prime number to use in hashCode() (default: 31)."
-    echo "  -g: Generate getter methods for the class."
-    echo "  -s: Generate setter methods for the class."
-    exit 1
+# --- Function to display help message ---
+show_help() {
+    echo "Usage: $(basename "$0") -f <java_file> [options]"
+    echo ""
+    echo "Barista ☕: Generates Java boilerplate code for a given class file."
+    echo ""
+    echo "Options:"
+    echo "  -f <java_file>             (Required) The path to the Java source file."
+    echo "  -p <var_prefix>            Only include fields that start with this prefix (e.g., m_)."
+    echo "  -b <boolean_getter_prefix> The prefix for boolean getters. Defaults to 'is'. Can be set to 'get'."
+    echo "  -m <prime_number>          The prime number to use as a multiplier in hashCode(). Defaults to 31."
+    echo "  -g                           Generate getter methods for the class."
+    echo "  -s                           Generate setter methods for the class."
+    echo "  -c                           Generate a copy constructor."
+    echo "  -e                           Generate equals() and hashCode() methods."
+    echo "  -h                           Display this help message."
 }
 
-# Function to convert a variable name to a plain name (for params/javadoc).
-# Arguments: Arg1=name, Arg2=var_prefix
-to_plain_name() {
-    local name="$1"
-    local var_prefix="$2"
-
-    if [[ -n "$var_prefix" ]]; then
-        echo "${name#"$var_prefix"}"
-    else
-        echo "$name"
-    fi
-}
-
-# Function to convert a variable name to a getter name.
-# Arguments: Arg1=type, Arg2=name, Arg3=boolean_prefix, Arg4=var_prefix
-to_getter_name() {
-    local type="$1"
-    local name="$2"
-    local bool_prefix="$3"
-    local var_prefix="$4"
-
-    # Get the name without the member variable prefix.
-    local plain_name
-    plain_name=$(to_plain_name "$name" "$var_prefix")
-    local final_name_part
-
-    if [[ "$type" == "boolean" || "$type" == "Boolean" ]]; then
-        # If the boolean field already starts with "is" followed by an uppercase letter...
-        if [[ "$plain_name" =~ ^is[A-Z] ]]; then
-            # ...strip the "is" part to avoid duplication like "isIsActive".
-            # e.g., "isReady" -> "Ready"
-            final_name_part="${plain_name:2}"
-        else
-            # ...otherwise, just capitalize the first letter of the name.
-            # e.g., "active" -> "Active"
-            final_name_part="$(tr '[:lower:]' '[:upper:]' <<< "${plain_name:0:1}")${plain_name:1}"
-        fi
-        echo "${bool_prefix}${final_name_part}"
-    else
-        # For non-booleans, just capitalize and add "get".
-        final_name_part="$(tr '[:lower:]' '[:upper:]' <<< "${plain_name:0:1}")${plain_name:1}"
-        echo "get${final_name_part}"
-    fi
-}
-
-
-# Function to convert a variable name to a setter name.
-# Arguments: Arg1=name, Arg2=var_prefix
-to_setter_name() {
-    local name="$1"
-    local var_prefix="$2"
-
-    # Get the name without the prefix.
-    name=$(to_plain_name "$name" "$var_prefix")
-
-    # Capitalize the first letter.
-    local capitalized_name
-    capitalized_name="$(tr '[:lower:]' '[:upper:]' <<< "${name:0:1}")${name:1}"
-
-    echo "set${capitalized_name}"
-}
-
-
-# --- Main Script Logic ---
-
-# Parse command-line options.
-while getopts "f:p:b:m:gsh" opt; do
-    case "$opt" in
-        f) FILE="$OPTARG" ;;
-        p) VAR_PREFIX="$OPTARG" ;;
-        b) BOOLEAN_PREFIX="$OPTARG" ;;
-        m) PRIME="$OPTARG" ;;
+# --- Argument parsing ---
+while getopts "f:p:b:m:gshce" opt; do
+    case ${opt} in
+        f) FILENAME=$OPTARG ;;
+        p) VAR_PREFIX=$OPTARG ;;
+        b) BOOLEAN_GETTER_PREFIX=$OPTARG ;;
+        m) PRIME_MULTIPLIER=$OPTARG ;;
         g) GENERATE_GETTERS=true ;;
         s) GENERATE_SETTERS=true ;;
-        h) usage ;;
-        *) usage ;;
+        c) GENERATE_COPY_CONSTRUCTOR=true ;;
+        e) GENERATE_EQUALS_HASHCODE=true ;;
+        h) show_help; exit 0 ;;
+        *) show_help; exit 1 ;;
     esac
 done
 
-# Validate that the file argument was provided.
-if [[ -z "$FILE" ]]; then
-    echo "Error: Java file not specified." >&2
-    usage
-fi
-
-# Validate that the file exists and is readable.
-if [[ ! -f "$FILE" ]] || [[ ! -r "$FILE" ]]; then
-    echo "Error: File '$FILE' does not exist or is not readable." >&2
+# --- Validation ---
+if [ -z "$FILENAME" ]; then
+    echo "Error: Java source file not specified." >&2
+    show_help
     exit 1
 fi
 
-# Extract the class name from the file.
-CLASS_NAME=$(grep -oP '(class|interface|enum)\s+\K\w+' "$FILE" | head -n 1)
-if [[ -z "$CLASS_NAME" ]]; then
-    echo "Error: Could not determine class name from '$FILE'." >&2
+if [ ! -f "$FILENAME" ]; then
+    echo "Error: File not found: $FILENAME" >&2
     exit 1
 fi
 
-# Find all private, non-static, non-final, non-transient fields ending with a semicolon.
-field_data=$(grep "private" "$FILE" | grep -v "static" | grep -v "final" | grep -v "transient" | grep ";")
+# --- Helper functions to format names ---
 
-if [[ -z "$field_data" ]]; then
-    echo "// No non-static, non-final, non-transient private fields found to process."
-    exit 0
-fi
-
-# Declare arrays to hold the types and names of the fields we care about.
-declare -a types
-declare -a names
-
-while IFS= read -r line; do
-    # Clean up the line: remove leading whitespace and the trailing semicolon.
-    line=$(echo "$line" | sed -e 's/^[ \t]*//' -e 's/;//')
-    
-    # Split the line into words to parse type and name.
-    read -ra words <<< "$line"
-    
-    # The last word is the variable name.
-    name=${words[-1]}
-    # The words between 'private' and the name form the type (handles generics).
-    type=$(echo "${words[@]:1:${#words[@]}-2}")
-
-    # If a prefix is specified, only include fields that match it.
-    if [[ -z "$VAR_PREFIX" ]] || [[ "$name" == "$VAR_PREFIX"* ]]; then
-        types+=("$type")
-        names+=("$name")
+# Removes prefix and converts to PascalCase
+to_pascal_case() {
+    local name=$1
+    local no_prefix=${name#$VAR_PREFIX}
+    # Handle boolean "is" prefix case
+    if [[ "$no_prefix" == is* ]]; then
+       no_prefix=${no_prefix#"is"}
     fi
-done <<< "$field_data"
+    local first_char=$(echo "${no_prefix:0:1}" | tr '[:lower:]' '[:upper:]')
+    echo "${first_char}${no_prefix:1}"
+}
 
-if [[ ${#names[@]} -eq 0 ]]; then
-    echo "// No fields found with the specified prefix '$VAR_PREFIX'."
+# Creates the getter method name
+to_getter_name() {
+    local type=$1
+    local name=$2
+    local pascal_case_name
+    pascal_case_name=$(to_pascal_case "$name")
+
+    if [ "$type" == "boolean" ]; then
+        # If the original field name starts with "is" (e.g., isReady), the getter is the same.
+        if [[ "$name" == is* ]]; then
+            echo "$name"
+        else
+            echo "${BOOLEAN_GETTER_PREFIX}${pascal_case_name}"
+        fi
+    else
+        echo "get${pascal_case_name}"
+    fi
+}
+
+# Creates the setter method name
+to_setter_name() {
+    local name=$1
+    local pascal_case_name
+    pascal_case_name=$(to_pascal_case "$name")
+    echo "set${pascal_case_name}"
+}
+
+# --- Field discovery ---
+# Find all private, non-static, non-final, non-transient fields. Filter by prefix if provided.
+fields_str=$(grep "private" "$FILENAME" | grep -v "static" | grep -v "final" | grep -v "transient" | grep -E "\s$VAR_PREFIX\w+\s*;" | sed 's/^\s*private\s*//;s/;\s*$//')
+if [ -z "$fields_str" ]; then
+    echo "// No private fields matching the criteria found. Nothing generated."
     exit 0
 fi
 
-# --- Generate Getters ---
-if [[ "$GENERATE_GETTERS" == true ]]; then
-    echo ""
+# Read fields into an array
+IFS=$'\n' read -r -d '' -a fields <<< "$fields_str"
+
+# --- Generation Functions ---
+
+generate_getters() {
     echo "    // --- Getters ---"
-    for i in "${!names[@]}"; do
-        type=${types[$i]}
-        name=${names[$i]}
-        plain_name=$(to_plain_name "$name" "$VAR_PREFIX")
-        getter_name=$(to_getter_name "$type" "$name" "$BOOLEAN_PREFIX" "$VAR_PREFIX")
+    for field in "${fields[@]}"; do
+        # Extract type and name
+        local type
+        local name
+        type=$(echo "$field" | awk '{ for (i=1; i<NF; i++) printf $i " "; print "" }' | sed 's/\s*$//')
+        name=$(echo "$field" | awk '{print $NF}')
+        
+        local getter_name
+        local pascal_case_name
+        getter_name=$(to_getter_name "$type" "$name")
+        pascal_case_name=$(to_pascal_case "$name")
+
         echo ""
         echo "    /**"
-        echo "     * @return The $plain_name."
+        echo "     * @return The ${pascal_case_name,}"
         echo "     */"
         echo "    public $type $getter_name() {"
         echo "        return $name;"
         echo "    }"
     done
-fi
+}
 
-# --- Generate Setters ---
-if [[ "$GENERATE_SETTERS" == true ]]; then
+generate_setters() {
     echo ""
     echo "    // --- Setters ---"
-    for i in "${!names[@]}"; do
-        type=${types[$i]}
-        name=${names[$i]}
-        plain_name=$(to_plain_name "$name" "$VAR_PREFIX")
-        setter_name=$(to_setter_name "$name" "$VAR_PREFIX")
+    for field in "${fields[@]}"; do
+        local type
+        local name
+        type=$(echo "$field" | awk '{ for (i=1; i<NF; i++) printf $i " "; print "" }' | sed 's/\s*$//')
+        name=$(echo "$field" | awk '{print $NF}')
+        
+        local setter_name
+        local param_name
+        setter_name=$(to_setter_name "$name")
+        param_name=${name#$VAR_PREFIX}
+        # Handle boolean "is" prefix case
+        if [[ "$param_name" == is* ]]; then
+            param_name=${param_name#"is"}
+        fi
+        
+        local pascal_case_name
+        pascal_case_name=$(to_pascal_case "$name")
+
         echo ""
         echo "    /**"
-        echo "     * @param $plain_name The $plain_name to set."
+        echo "     * @param $param_name The ${pascal_case_name,,} to set."
         echo "     */"
-        echo "    public void $setter_name($type $plain_name) {"
-        echo "        this.$name = $plain_name;"
+        echo "    public void $setter_name($type $param_name) {"
+        echo "        this.$name = $param_name;"
         echo "    }"
     done
+}
+
+generate_copy_constructor() {
+    local class_name
+    class_name=$(basename "$FILENAME" .java)
+    local needs_arrays_import=false
+
+    # Check if any field is an array to see if we need the import note
+    for field in "${fields[@]}"; do
+        local type
+        type=$(echo "$field" | awk '{ for (i=1; i<NF; i++) printf $i " "; print "" }' | sed 's/\s*$//')
+        if [[ $type == *"[]"* ]]; then
+            needs_arrays_import=true
+            break
+        fi
+    done
+    
+    echo ""
+    if [ "$needs_arrays_import" = true ]; then
+        echo "    // NOTE: Consider adding 'import java.util.Arrays;' to your class for the copy constructor."
+    fi
+    echo "    // --- Copy Constructor ---"
+    echo ""
+    echo "    /**"
+    echo "     * Creates a deep copy of an existing $class_name instance."
+    echo "     * <p>"
+    echo "     * This constructor performs a deep copy for array fields and assumes"
+    echo "     * that other object fields have a copy constructor for their deep copy."
+    echo "     * Primitives and immutable types like String are copied by value."
+    echo "     * @param other The $class_name to copy, must not be null."
+    echo "     */"
+    echo "    public $class_name($class_name other) {"
+    
+    for field in "${fields[@]}"; do
+        local type
+        local name
+        type=$(echo "$field" | awk '{ for (i=1; i<NF; i++) printf $i " "; print "" }' | sed 's/\s*$//')
+        name=$(echo "$field" | awk '{print $NF}')
+        
+        case $type in
+            boolean|byte|char|short|int|long|float|double|String)
+                # Primitives and immutable String can be directly assigned
+                echo "        this.$name = other.$name;"
+                ;;
+            *) # Other Objects and arrays
+                if [[ $type == *"[]"* ]]; then
+                    # Handle arrays with a deep copy using Arrays.copyOf
+                    echo "        this.$name = other.$name == null ? null : java.util.Arrays.copyOf(other.$name, other.$name.length);"
+                else
+                    # Assume other objects have a copy constructor
+                    echo "        this.$name = other.$name == null ? null : new $type(other.$name);"
+                fi
+                ;;
+        esac
+    done
+
+    echo "    }"
+}
+
+generate_equals_and_hashcode() {
+    local class_name
+    class_name=$(basename "$FILENAME" .java)
+    local object_comparisons=()
+    local primitive_comparisons=()
+    local hashcode_lines=()
+
+    for field in "${fields[@]}"; do
+        local type
+        local name
+        type=$(echo "$field" | awk '{ for (i=1; i<NF; i++) printf $i " "; print "" }' | sed 's/\s*$//')
+        name=$(echo "$field" | awk '{print $NF}')
+        local getter_name
+        getter_name=$(to_getter_name "$type" "$name")
+
+        case $type in
+            boolean|byte|char|short|int)
+                primitive_comparisons+=("$getter_name() == that.$getter_name()")
+                hashcode_lines+=("result = $PRIME_MULTIPLIER * result + (int) $getter_name();")
+                ;;
+            long)
+                primitive_comparisons+=("$getter_name() == that.$getter_name()")
+                hashcode_lines+=("result = $PRIME_MULTIPLIER * result + (int) ($getter_name() ^ ($getter_name() >>> 32));")
+                ;;
+            float)
+                primitive_comparisons+=("Float.compare(that.$getter_name(), $getter_name()) == 0")
+                hashcode_lines+=("result = $PRIME_MULTIPLIER * result + ($getter_name() != +0.0f ? Float.floatToIntBits($getter_name()) : 0);")
+                ;;
+            double)
+                primitive_comparisons+=("Double.compare(that.$getter_name(), $getter_name()) == 0")
+                hashcode_lines+=("temp = Double.doubleToLongBits($getter_name()); result = $PRIME_MULTIPLIER * result + (int) (temp ^ (temp >>> 32));")
+                ;;
+            *) # Objects and arrays
+                if [[ $type == *"[]"* ]]; then
+                    object_comparisons+=("java.util.Arrays.equals($getter_name(), that.$getter_name())")
+                    hashcode_lines+=("result = $PRIME_MULTIPLIER * result + java.util.Arrays.hashCode($getter_name());")
+                else
+                    object_comparisons+=("java.util.Objects.equals($getter_name(), that.$getter_name())")
+                    hashcode_lines+=("result = $PRIME_MULTIPLIER * result + ($getter_name() == null ? 0 : $getter_name().hashCode());")
+                fi
+                ;;
+        esac
+    done
+    
+    local all_comparisons=("${primitive_comparisons[@]}" "${object_comparisons[@]}")
+
+    echo ""
+    echo "    // NOTE: Consider adding 'import java.util.Objects;' and 'import java.util.Arrays;' to your class."
+    echo ""
+    echo "    @Override"
+    echo "    public boolean equals(Object o) {"
+    echo "        if (this == o) return true;"
+    echo "        if (!(o instanceof $class_name)) return false;"
+    echo "        $class_name that = ($class_name) o;"
+    
+    if [ ${#all_comparisons[@]} -gt 0 ]; then
+        echo -n "        return $(IFS=" && " ; echo "${all_comparisons[*]}")"
+    else
+        echo "        return true;"
+    fi
+    echo ";"
+    echo "    }"
+
+    echo ""
+    echo "    @Override"
+    echo "    public int hashCode() {"
+    echo "        int result = 1;"
+    if grep -q "double" <<< "$fields_str"; then
+        echo "        long temp;"
+    fi
+    for line in "${hashcode_lines[@]}"; do
+        echo "        $line"
+    done
+    echo "        return result;"
+    echo "    }"
+}
+
+# Check if any generation option was selected
+if [ "$GENERATE_GETTERS" = false ] && [ "$GENERATE_SETTERS" = false ] && [ "$GENERATE_COPY_CONSTRUCTOR" = false ] && [ "$GENERATE_EQUALS_HASHCODE" = false ]; then
+    echo "// No generation options specified (-g, -s, -c, -e). Nothing to generate."
+    echo "// Use -h for help."
+    exit 0
 fi
 
-# --- Generate equals() Method ---
+if [ "$GENERATE_GETTERS" = true ]; then
+    generate_getters
+fi
 
-echo ""
-echo "    // NOTE: Consider adding 'import java.util.Objects;' to your class."
-echo ""
-echo "    @Override"
-echo "    public boolean equals(Object o) {"
-echo "        if (this == o) return true;"
-echo "        if (o == null || getClass() != o.getClass()) return false;"
-echo "        $CLASS_NAME that = ($CLASS_NAME) o;"
+if [ "$GENERATE_SETTERS" = true ]; then
+    generate_setters
+fi
 
-# Build an array of comparison statements for each field.
-comparisons=()
-for i in "${!names[@]}"; do
-    type=${types[$i]}
-    name=${names[$i]}
-    getter=$(to_getter_name "$type" "$name" "$BOOLEAN_PREFIX" "$VAR_PREFIX")
+if [ "$GENERATE_COPY_CONSTRUCTOR" = true ]; then
+    generate_copy_constructor
+fi
 
-    case "$type" in
-        "double")
-            comparisons+=("Double.compare(that.$getter(), $getter()) == 0")
-            ;;
-        "float")
-            comparisons+=("Float.compare(that.$getter(), $getter()) == 0")
-            ;;
-        "int"|"short"|"byte"|"char"|"boolean"|"long")
-            comparisons+=("$getter() == that.$getter()")
-            ;;
-        *) # Handle all object types, including arrays.
-            comparisons+=("java.util.Objects.equals($getter(), that.$getter())")
-            ;;
-    esac
-done
+if [ "$GENERATE_EQUALS_HASHCODE" = true ]; then
+    generate_equals_and_hashcode
+fi
 
-# Assemble the final return statement from the comparison parts.
-return_statement="        return "
-for i in "${!comparisons[@]}"; do
-    return_statement+="${comparisons[$i]}"
-    if [[ $i -lt $((${#comparisons[@]} - 1)) ]]; then
-        return_statement+=" &&\n               "
-    fi
-done
-return_statement+=";"
-
-echo "$return_statement"
-echo "    }"
-echo ""
-
-
-# --- Generate hashCode() Method ---
-
-echo "    @Override"
-echo "    public int hashCode() {"
-echo "        int result = 1;"
-echo "        long temp;"
-for i in "${!names[@]}"; do
-    type=${types[$i]}
-    name=${names[$i]}
-    getter=$(to_getter_name "$type" "$name" "$BOOLEAN_PREFIX" "$VAR_PREFIX")
-
-    case "$type" in
-        "double")
-            echo "        temp = Double.doubleToLongBits($getter());"
-            echo "        result = $PRIME * result + (int) (temp ^ (temp >>> 32));"
-            ;;
-        "long")
-            echo "        temp = $getter();"
-            echo "        result = $PRIME * result + (int) (temp ^ (temp >>> 32));"
-            ;;
-        "float")
-            echo "        result = $PRIME * result + Float.floatToIntBits($getter());"
-            ;;
-        "boolean")
-            echo "        result = $PRIME * result + ($getter() ? 1 : 0);"
-            ;;
-        "int"|"short"|"byte"|"char")
-            echo "        result = $PRIME * result + (int) $getter();"
-            ;;
-        *) # Handle all object types.
-            echo "        result = $PRIME * result + ($getter() == null ? 0 : $getter().hashCode());"
-            ;;
-    esac
-done
-echo "        return result;"
-echo "    }"

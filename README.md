@@ -1,6 +1,6 @@
 # Barista ☕
 
-_Brew_ fresh `equals()`, `hashCode()`, getters, and setters for your Java classes.
+_Brew_ fresh `equals()`, `hashCode()`, getters, setters and deep copy-constructors for your Java classes.
 
 Barista is a simple yet powerful command-line utility that reads a Java source file and automatically generates boilerplate methods. It saves you time and reduces the risk of errors by creating correct, consistent implementations based on your class's fields.
 
@@ -8,6 +8,7 @@ Barista is a simple yet powerful command-line utility that reads a Java source f
 
 * `equals()` Generation: Creates a robust equals() method that correctly compares all specified fields, handling primitives, objects, and arrays.
 * `hashCode()` Generation: Generates an efficient hashCode() method based on the Effective Java recipe.
+* Generates _deep_ copy constructors for a given class.
 * Getters & Setters: Optionally generates standard getter and setter methods for your fields, complete with basic Javadoc comments.
 * Target specific fields using a variable prefix (e.g., `m_`, `_`).
 * Specify the prefix for boolean getters (`is` or `get`).
@@ -39,7 +40,6 @@ Barista is a simple yet powerful command-line utility that reads a Java source f
 
 Run the script from your terminal, pointing it to the Java file you want to process. The generated code will be printed to standard output, ready for you to copy and paste into your class.
 
-
 ```sh
 barista.sh -f path/to/YourClass.java [options]
 ```
@@ -49,6 +49,8 @@ barista.sh -f path/to/YourClass.java [options]
 |Flag|Argument|Description|
 |----|--------|-----------|
 |`-f`|<java_file>|(Required) The path to the Java source file.|
+|`-e`|Nil|Generate `equals()` and `hashCode()` methods for the class.|
+|`-c`|Nil|Generate a deep copy constructor for the class.|
 |`-p`|<var_prefix>|Only include fields that start with this prefix (e.g., `m_`).|
 |`-b`|<boolean_getter_prefix>|The prefix for boolean getters. Defaults to is. Can be set to get.|
 |`-m`|<prime_number>|The prime number to use as a multiplier in `hashCode()`. Defaults to `31`.|
@@ -59,7 +61,6 @@ barista.sh -f path/to/YourClass.java [options]
 ## Examples
 
 Let's assume we have the following Vehicle.java file:
-
 
 ```java
 public class Vehicle {
@@ -73,13 +74,12 @@ private String color; // This field has no prefix
 }
 ```
 
-
 ### Generate `equals()` and `hashCode()` for Prefixed Fields
 
 This command targets only the fields starting with `m_`.
 
 ```sh
-./barista.sh -f Vehicle.java -p "m\_"
+./barista.sh -f Vehicle.java -p "m_"
 ```
 
 Output:
@@ -162,7 +162,7 @@ public void setMake(String make) {
 
 ## How It Works
 
-_Barista_ uses `grep` to find all private field declarations and filters out any that are static, final, or transient. It then parses the type and name of each field and uses this information to construct the method text based on standard Java conventions and the options you provide.
+_Barista_ uses a variety of standard command-line tools (`bash`, `grep`, `sed`, and `tr`) to find all private field declarations and filters out any that are static, final, or transient. It then parses the type and name of each field and uses this information to construct the method text based on standard Java conventions and the options you provide.
 
 ## License
 
