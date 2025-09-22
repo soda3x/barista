@@ -20,8 +20,8 @@ usage() {
     echo "  -p: Prefix for instance variables to include (e.g., 'm_')."
     echo "  -b: Prefix for boolean getters (default: 'is'). Can be 'get'."
     echo "  -m: Prime number to use in hashCode() (default: 31)."
-    echo "  -g: Generate getter methods for the specified fields."
-    echo "  -s: Generate setter methods for the specified fields."
+    echo "  -g: Generate getter methods for the class."
+    echo "  -s: Generate setter methods for the class."
     exit 1
 }
 
