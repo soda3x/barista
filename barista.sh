@@ -280,11 +280,27 @@ generate_equals_and_hashcode() {
     echo "        $class_name that = ($class_name) o;"
     
     if [ ${#all_comparisons[@]} -gt 0 ]; then
-        echo -n "        return $(IFS=" && " ; echo "${all_comparisons[*]}")"
+        # Handle the first line
+        if [ ${#all_comparisons[@]} -eq 1 ]; then
+            # Only one comparison, so add a semicolon on the same line
+            echo "        return ${all_comparisons[0]};"
+        else
+            echo "        return ${all_comparisons[0]}"
+        fi
+
+        # Loop through the rest of the comparisons, starting from the second element
+        local last_index=$((${#all_comparisons[@]} - 1))
+        for (( i=1; i<=${last_index}; i++ )); do
+            local line="               && ${all_comparisons[$i]}"
+            # Add semicolon to the very last line
+            if [ $i -eq $last_index ]; then
+                line+=";"
+            fi
+            echo "$line"
+        done
     else
         echo "        return true;"
     fi
-    echo ";"
     echo "    }"
 
     echo ""
@@ -300,7 +316,6 @@ generate_equals_and_hashcode() {
     echo "        return result;"
     echo "    }"
 }
-
 # Check if any generation option was selected
 if [ "$GENERATE_GETTERS" = false ] && [ "$GENERATE_SETTERS" = false ] && [ "$GENERATE_COPY_CONSTRUCTOR" = false ] && [ "$GENERATE_EQUALS_HASHCODE" = false ]; then
     echo "// No generation options specified (-g, -s, -c, -e). Nothing to generate."
