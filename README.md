@@ -22,6 +22,16 @@ Barista is a simple yet powerful command-line utility that reads a Java source f
 
 ## Installation
 
+### The Easy Way
+
+```sh
+curl -o barista -L https://raw.githubusercontent.com/soda3x/barista/refs/heads/main/barista.sh && chmod +x barista && sudo mv barista /usr/local/bin/barista
+```
+
+### The Manual Way
+
+_The easy way_ just automatically does the following:
+
 1. Clone this repository or download the barista.sh script.
 
 1. Make the script executable:
