@@ -240,9 +240,13 @@ generate_equals_and_hashcode() {
         getter_name=$(to_getter_name "$type" "$name")
 
         case $type in
-            boolean|byte|char|short|int)
+            boolean)
                 primitive_comparisons+=("$getter_name() == that.$getter_name()")
-                hashcode_lines+=("result = $PRIME_MULTIPLIER * result + (int) $getter_name();")
+                hashcode_lines+=("result = $PRIME_MULTIPLIER * result + ($getter_name() ? 1 : 0);")
+                ;;
+            byte|char|short|int)
+                primitive_comparisons+=("$getter_name() == that.$getter_name()")
+                hashcode_lines+=("result = $PRIME_MULTIPLIER * result + $getter_name();")
                 ;;
             long)
                 primitive_comparisons+=("$getter_name() == that.$getter_name()")
@@ -316,6 +320,7 @@ generate_equals_and_hashcode() {
     echo "        return result;"
     echo "    }"
 }
+
 # Check if any generation option was selected
 if [ "$GENERATE_GETTERS" = false ] && [ "$GENERATE_SETTERS" = false ] && [ "$GENERATE_COPY_CONSTRUCTOR" = false ] && [ "$GENERATE_EQUALS_HASHCODE" = false ]; then
     echo "// No generation options specified (-g, -s, -c, -e). Nothing to generate."
